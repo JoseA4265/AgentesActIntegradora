@@ -1,4 +1,3 @@
-# (Full file — replace your existing main.py with this)
 import sys
 def _check_deps():
     missing = []
