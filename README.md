@@ -21,7 +21,7 @@ El juego termina (GAME OVER) si ocurre una de las siguientes condiciones:
 1.  **El impostor te atrapa:** Si el agente rojo (NPC) colisiona contigo.
 2.  **Una bomba explota:** Si el temporizador de cualquier bomba llega a cero antes de que sea desactivada.
 
-## ⌨️ Controles
+## Controles
 
 * **Movimiento:** `W`, `A`, `S`, `D` o **Teclas de Flecha**
     * `W / Arriba`: Moverse hacia adelante
