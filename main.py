@@ -50,12 +50,11 @@ ROOM_SPACING = 20.0
 
 GAME_OVER = False
 
-# Bomb class (now used for multiple bombs)
 class Bomb:
     def __init__(self, x=0.0, z=-1.5, timer=120.0):
         self.active = True
         self.start_time = time.time()
-        self.timer = timer  # seconds
+        self.timer = timer  
         self.deactivated = False
         self.exploded = False
         self.carried = False
@@ -67,28 +66,25 @@ class Bomb:
         elapsed = time.time() - self.start_time
         return max(0, self.timer - elapsed)
 
-# Create 3 bombs positioned in the three room centers (left, center, right)
 bombs = [
     Bomb(x=1, z=0.0, timer=120.0),
     Bomb(x=0.0, z=-1.5, timer=120.0),
     Bomb(x=-1, z=0.0, timer=120.0),
 ]
 
-#deactivation square
 deactivation_areas = [
-    {"x0": -22.5, "z0": -2.5, "x1": -17.5, "z1": +2.5, "color": (120, 230, 120)},  # Room 1 center
-    {"x0": +17.5, "z0": -2.5, "x1": +22.5, "z1": +2.5, "color": (120, 230, 120)},  # Room 3 center
+    {"x0": -22.5, "z0": -2.5, "x1": -17.5, "z1": +2.5, "color": (120, 230, 120)},  
+    {"x0": +17.5, "z0": -2.5, "x1": +22.5, "z1": +2.5, "color": (120, 230, 120)},  
 ]
 
 def draw_square_areas():
-    """Draw the deactivation zones as colored squares using the same style as room floors."""
     glDisable(GL_TEXTURE_2D)
     for area in deactivation_areas:
         x0, z0, x1, z1, color = area["x0"], area["z0"], area["x1"], area["z1"], area["color"]
         set_material(color, specular=(20, 20, 20), shininess=8)
         glBegin(GL_QUADS)
         glNormal3f(0, 1, 0)
-        y = 1.1  # slightly above floor
+        y = 1.1  
         glVertex3f(x0, y, z0)
         glVertex3f(x1, y, z0)
         glVertex3f(x1, y, z1)
@@ -96,7 +92,6 @@ def draw_square_areas():
         glEnd()
 
 def cargo_in_deactivation_area(cx, cz):
-    """Check if cargo center is within any deactivation area."""
     for area in deactivation_areas:
         if area["x0"] <= cx <= area["x1"] and area["z0"] <= cz <= area["z1"]:
             return True
@@ -108,12 +103,10 @@ class AgentState:
         self.x, self.y, self.z = 0.0, 0.0, 0.0
         self.yaw = 0.0
         self.state = 'idle'
-        # carrying_index: None if not carrying, else index into bombs list
         self.carrying_index = None
         self.leg_l = 0.0
         self.leg_r = 0.0
         self._t = 0.0
-        # removed single cargo_world_pos — each bomb has its own world_pos
 
 class NPCState:
     def __init__(self):
@@ -268,11 +261,11 @@ def draw_walls():
 def draw_cargo_cube(b):
     glDisable(GL_CULL_FACE)
     if b.deactivated:
-        color = (100, 220, 100)   # green when safe
+        color = (100, 220, 100)   
     elif b.exploded:
-        color = (240, 60, 60)     # red when exploded
+        color = (240, 60, 60)     
     else:
-        color = (240, 210, 80)    # normal yellow
+        color = (240, 210, 80)    
     set_material(color)
     glPushMatrix()
     glScalef(0.35, 0.35, 0.35)
@@ -414,7 +407,6 @@ def reset_game():
     GAME_OVER = False
     keys_down.clear()
 
-    # reset bombs
     bombs = [
         Bomb(x=-ROOM_SPACING, z=0.0, timer=120.0),
         Bomb(x=0.0, z=-1.5, timer=120.0),
@@ -424,7 +416,6 @@ def reset_game():
 def key_callback(window, key, scancode, action, mods):
     global GAME_OVER, agent, bombs
 
-    # --- Handle game over state ---
     if GAME_OVER:
         if action == glfw.PRESS:
             if key == glfw.KEY_ESCAPE:
@@ -433,7 +424,6 @@ def key_callback(window, key, scancode, action, mods):
                 reset_game()
         return
 
-    # --- Key pressed ---
     if action == glfw.PRESS:
         keys_down.add(key)
 
@@ -441,9 +431,7 @@ def key_callback(window, key, scancode, action, mods):
             glfw.set_window_should_close(window, True)
 
         elif key == glfw.KEY_SPACE:
-            # Toggle carry/drop
             if agent.carrying_index is not None:
-                # drop it
                 idx = agent.carrying_index
                 b = bombs[idx]
                 fx = math.sin(math.radians(agent.yaw))
@@ -452,14 +440,12 @@ def key_callback(window, key, scancode, action, mods):
                 b.carried = False
                 agent.carrying_index = None
 
-                # --- Check for bomb deactivation after dropping ---
                 cx, _, cz = b.world_pos
                 if cargo_in_deactivation_area(cx, cz):
                     b.deactivated = True
                     b.active = False
                     print(f"Bomb {idx} deactivated safely!")
             else:
-                # Try to pick up nearest cargo if within range
                 best_idx = None
                 best_dist = 1e9
                 for i, b in enumerate(bombs):
@@ -474,13 +460,11 @@ def key_callback(window, key, scancode, action, mods):
                     agent.carrying_index = best_idx
                     bombs[best_idx].carried = True
 
-    # --- Key released ---
     elif action == glfw.RELEASE:
         if key in keys_down:
             keys_down.remove(key)
 
 
-# ------------- Utils -------------
 def clamp(v, a, b):
     return max(a, min(b, v))
 
@@ -646,7 +630,6 @@ def draw_hud_text(window, text):
     glfw.set_window_title(window, f"M4  |  {text}")
 
 def distance_to_nearest_deactivation(x, z):
-    """Return distance from agent to the center of the nearest deactivation area."""
     min_dist = float('inf')
     for area in deactivation_areas:
         cx = (area["x0"] + area["x1"]) / 2
@@ -692,7 +675,6 @@ def main():
                 agent.state = 'idle'
                 npc.state = 'idle'
 
-        # Bomb timers & explosion check (if any bomb explodes, game over)
         for i, b in enumerate(bombs):
             if b.active and not b.deactivated and not b.carried:
                 remaining = b.remaining()
@@ -729,7 +711,6 @@ def main():
             carrying=False
         )
 
-        # Draw each bomb's cargo cube if not carried; carried one is drawn on humanoid
         for i, b in enumerate(bombs):
             if b.carried:
                 continue
@@ -740,7 +721,6 @@ def main():
             glPopMatrix()
 
         if not GAME_OVER:
-            # Compute HUD info: distance to nearest bomb, and bomb statuses
             nearest_dist = 1e9
             statuses = []
             for i, b in enumerate(bombs):
@@ -753,7 +733,6 @@ def main():
                 elif b.exploded:
                     statuses.append(f"[{i}:EXPLODED]")
                 else:
-                    # show remaining time (if carried we show 'CARRIED')
                     if b.carried:
                         statuses.append(f"[{i}:CARRIED]")
                     else:
