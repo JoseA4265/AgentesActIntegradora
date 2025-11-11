@@ -35,7 +35,7 @@ El juego termina (GAME OVER) si ocurre una de las siguientes condiciones:
     * `R`: Reiniciar el juego (después de perder).
     * `Esc`: Salir de la aplicación.
 
-## 🤖 Características de los Agentes
+## Características de los Agentes
 
 El proyecto cuenta con dos tipos de agentes con comportamientos distintos:
 
@@ -52,7 +52,7 @@ El proyecto cuenta con dos tipos de agentes con comportamientos distintos:
     * **`CHASE` (Persecución):** Si el jugador entra en la misma habitación que el impostor, este abandonará su patrullaje y comenzará a perseguir al jugador.
     * **`RETURN` (Retorno):** Si el jugador sale de la habitación y el impostor lo pierde de vista, este calculará el punto más cercano de su ruta de patrullaje y regresará a ella para continuar en modo `ROAM`.
 
-## 🛠️ Instalación y Ejecución
+## Instalación y Ejecución
 
 Este proyecto utiliza `glfw` para la gestión de la ventana y `PyOpenGL` para el renderizado 3D.
 
