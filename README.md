@@ -1,92 +1,77 @@
-# AgentesActIntegradora
+# SUS - Multiplayer en Julia
 
-Este es un proyecto de simulación de agentes en 3D desarrollado en Python, Julia, PyOpenGL y GLFW.
+Un juego multijugador básico tipo *Among Us* implementado 100% en **Julia** usando **OpenGL**. Permite jugar en red local (LAN) con arquitectura Cliente-Servidor.
 
-El escenario es un juego de supervivencia donde un jugador (agente azul) debe completar una misión de desactivación de bombas mientras es perseguido por un agente impostor autónomo (agente rojo).
+## Requisitos Previos
 
+1.  Tener **Julia** instalado.
+2.  Instalar las dependencias necesarias. Abre Julia y ejecuta:
 
-## Objetivo del Juego
+<!-- end list -->
 
-El objetivo del jugador es encontrar y desactivar las **3 bombas** (cubos amarillos) repartidas por el mapa antes de que se acabe su temporizador individual.
+```julia
+import Pkg
+Pkg.add(["GLFW", "ModernGL"])
+```
 
-Para desactivar una bomba, el jugador debe:
-1.  Acercarse a una bomba.
-2.  Recogerla (con la barra espaciadora).
-3.  Llevarla hasta una de las **zonas de desactivación** (los cuadrados verdes).
-4.  Soltarla dentro de la zona (con la barra espaciadora).
+## Cómo Jugar
 
-### Condiciones de Derrota
+Abre tu terminal en la carpeta donde guardaste el archivo `game.jl` y elige tu modo de juego:
 
-El juego termina (GAME OVER) si ocurre una de las siguientes condiciones:
-1.  **El impostor te atrapa:** Si el agente rojo (NPC) colisiona contigo.
-2.  **Una bomba explota:** Si el temporizador de cualquier bomba llega a cero antes de que sea desactivada.
+### 1\. Modo HOST (Crear partida y Jugar)
 
-## Controles
+Usa este comando si quieres levantar el servidor y controlar al **Jugador 1 (Azul)** en la misma ventana.
 
-* **Movimiento:** `W`, `A`, `S`, `D` o **Teclas de Flecha**
-    * `W / Arriba`: Moverse hacia adelante
-    * `S / Abajo`: Moverse hacia atrás
-    * `A / Izquierda`: Girar a la izquierda
-    * `D / Derecha`: Girar a la derecha
-* **Acción:** `Barra Espaciadora`
-    * **Recoger** una bomba (si estás cerca y no llevas nada).
-    * **Soltar** la bomba que llevas.
-* **Juego:**
-    * `R`: Reiniciar el juego (después de perder).
-    * `Esc`: Salir de la aplicación.
+```bash
+julia game.jl host 2000
+```
 
-## Características de los Agentes
+> Usa **W, A, S, D** para moverte y **ESPACIO** para interactuar.
 
-El proyecto cuenta con dos tipos de agentes con comportamientos distintos:
+### 2\. Modo CLIENTE (Unirse a una partida)
 
-### 1. Agente Jugador (Controlado por el Usuario)
-* Agente de color **azul**.
-* Controlado directamente por las entradas del teclado.
-* Puede interactuar con los objetos "bomba" para recogerlos y soltarlos.
-* Sus colisiones con las paredes están implementadas para limitar el movimiento.
+Usa este comando para unirte a una partida creada por un Host.
 
-### 2. Agente Impostor (NPC Autónomo)
-* Agente de color **rojo**.
-* Utiliza una **máquina de estados finitos** para definir su comportamiento:
-    * **`ROAM` (Patrullaje):** El agente sigue una ruta predefinida (un `path`) que recorre los pasillos exteriores.
-    * **`CHASE` (Persecución):** Si el jugador entra en la misma habitación que el impostor, este abandonará su patrullaje y comenzará a perseguir al jugador.
-    * **`RETURN` (Retorno):** Si el jugador sale de la habitación y el impostor lo pierde de vista, este calculará el punto más cercano de su ruta de patrullaje y regresará a ella para continuar en modo `ROAM`.
+  * **Si juegas solo en tu PC (prueba local):**
 
-## Instalación y Ejecución
-
-Este proyecto utiliza `glfw` para la gestión de la ventana y `PyOpenGL` para el renderizado 3D.
-
-### 1. Prerrequisitos
-* Python 3.7 o superior
-* `pip` y `venv` (recomendado)
-
-### 2. Pasos para Ejecutar
-
-1.  **Clonar el repositorio:**
     ```bash
-    git clone [https://github.com/JoseA4265/AgentesActIntegradora.git](https://github.com/JoseA4265/AgentesActIntegradora.git)
-    cd AgentesActIntegradora
+    julia game.jl client 127.0.0.1 2000
     ```
 
-2.  **Crear y activar un entorno virtual:**
-    * En macOS / Linux:
-        ```bash
-        python3 -m venv .venv
-        source .venv/bin/activate
-        ```
-    * En Windows:
-        ```bash
-        python -m venv .venv
-        .\.venv\Scripts\activate
-        ```
+  * **Si te unes a otra computadora en la misma red Wi-Fi:**
+    Reemplaza `IP_DEL_HOST` por la dirección IP de la computadora que corrió el comando `host`.
 
-3.  **Instalar las dependencias:**
-    El script `main.py` incluye un verificador de dependencias. Puedes instalarlas manualmente con:
     ```bash
-    pip install glfw PyOpenGL PyOpenGL-accelerate numpy
+    julia game.jl client IP_DEL_HOST 2000
     ```
 
-4.  **Ejecutar el proyecto:**
+### 3\. Modo ESPECTADOR (Cámara de Seguridad)
+
+Usa este comando si solo quieres ver el mapa completo sin jugar (útil para pantallas grandes o debugging).
+
+```bash
+julia game.jl server 2000
+```
+
+## Jugar en Red Local (LAN)
+
+Si quieres jugar con amigos en diferentes Macs conectadas al mismo Wi-Fi:
+
+1.  **El Host (Quien crea la partida):**
+    Debe averiguar su dirección IP local. En una terminal nueva escribe:
+
     ```bash
-    python main.py
+    ipconfig getifaddr en0
+    ```
+
+    *(Te dará un número como `192.168.1.XX`)*.
+
+2.  **Permisos:**
+    Al iniciar el Host por primera vez, macOS preguntará si quieres permitir conexiones de red entrantes. Debes darle clic a **Permitir (Allow)** para que tus amigos puedan entrar.
+
+3.  **Los Clientes (Tus amigos):**
+    Deben conectarse usando la IP que obtuvo el Host en el paso 1:
+
+    ```bash
+    julia game.jl client 192.168.1.XX 2000
     ```
