@@ -1,3 +1,6 @@
+# ==============================================================================
+# AMONG US - CLON MULTIJUGADOR EN JULIA (Server Autoritativo)
+# ==============================================================================
 using Sockets
 using Serialization
 using GLFW
@@ -5,6 +8,9 @@ using ModernGL
 using LinearAlgebra
 using Printf
 
+# ==============================================================================
+# 1. ESTRUCTURAS DE DATOS COMPARTIDAS (SERIALIZABLES)
+# ==============================================================================
 
 mutable struct Bomb
     id::Int
@@ -62,7 +68,7 @@ const ROOM_SPACING = 20.0
 const ROOM_SIZE = 14.0
 const WALK_SPEED = 5.0
 const TURN_SPEED = 120.0
-const PICKUP_RANGE = 1.5
+const PICKUP_RANGE = 2.0 # Aumentado ligeramente para facilitar agarre
 
 # ==============================================================================
 # 2. LÓGICA DEL JUEGO (FÍSICAS Y ESTADO)
@@ -91,9 +97,7 @@ const NPC_PATH = [
 
 # Colisiones simples (AABB vs Point)
 function check_wall_collision(x, z)
-    # Definimos paredes simplificadas para el ejemplo
-    # Si sale de los límites generales o choca con "cajas" imaginarias de las habitaciones
-    # Por brevedad, usaremos límites simples
+    # Definimos paredes simplificadas
     if x < -40 || x > 40 || z < -40 || z > 40
         return true
     end
@@ -157,9 +161,8 @@ function update_game_logic!(state::GameState, inputs::Dict{Int, ClientInput}, dt
                     b.z = p.z + cos(rad)*0.8
                     p.carrying_bomb_id = 0
                     
-                    # Checar desactivación (Áreas verdes)
-                    # Simplificado: si x > 15 y z > -2.5 ...
-                    if (abs(b.x) > 17 && abs(b.z) < 3) # Ejemplo de zona
+                    # Checar desactivación (Áreas verdes - Ejemplo: Centro derecha)
+                    if (abs(b.x) > 17 && abs(b.z) < 3) 
                         b.deactivated = true
                         b.active = false
                     end
@@ -206,13 +209,12 @@ function update_game_logic!(state::GameState, inputs::Dict{Int, ClientInput}, dt
                 b.exploded = true
                 b.active = false
                 state.game_over = true
-                state.msg = "GAME OVER: ¡Bomba explotó!"
+                state.msg = "GAME OVER: BOOM!"
             end
         end
         # Si alguien la lleva, actualizar pos
         if b.carrier_id > 0 && haskey(state.players, b.carrier_id)
             carrier = state.players[b.carrier_id]
-            # La bomba sigue al jugador (lógica visual, en server solo guardamos ref)
             b.x = carrier.x
             b.z = carrier.z
         end
@@ -227,7 +229,7 @@ end
 function set_material(color)
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, Float32[color[1], color[2], color[3], 1.0])
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, Float32[0.2, 0.2, 0.2, 1.0])
-    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 32.0)
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 32.0f0)
 end
 
 function draw_cube()
@@ -260,7 +262,7 @@ function draw_character(x, y, z, yaw, leg_l, leg_r, color, has_cargo)
     draw_cube()
     glPopMatrix()
 
-    # Cabeza (Cubo simple por falta de GLUT Sphere)
+    # Cabeza
     set_material((color[1]*1.2, color[2]*1.2, color[3]*1.2))
     glPushMatrix()
     glTranslatef(0, 1.6, 0)
@@ -300,7 +302,31 @@ function draw_character(x, y, z, yaw, leg_l, leg_r, color, has_cargo)
     glPopMatrix()
 end
 
-function render_scene(state::GameState, my_id::Int)
+# Implementación manual de gluLookAt para Julia
+function manual_gluLookAt(eyex, eyey, eyez, centerx, centery, centerz, upx, upy, upz)
+    f = [centerx - eyex, centery - eyey, centerz - eyez]
+    f = normalize(f)
+    u = [upx, upy, upz]
+    u = normalize(u)
+    s = cross(f, u)
+    s = normalize(s)
+    u = cross(s, f)
+    
+    M = Float32[
+         s[1]  u[1] -f[1]  0;
+         s[2]  u[2] -f[2]  0;
+         s[3]  u[3] -f[3]  0;
+            0     0     0  1
+    ]
+    glMultMatrixf(M)
+    glTranslatef(-Float32(eyex), -Float32(eyey), -Float32(eyez))
+end
+
+function render_scene(state::GameState, my_id::Int, window::GLFW.Window)
+    # FIX MACOS RETINA: Usar FramebufferSize en lugar de WindowSize
+    fb_w, fb_h = GLFW.GetFramebufferSize(window)
+    glViewport(0, 0, fb_w, fb_h)
+    
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glLoadIdentity()
 
@@ -313,15 +339,14 @@ function render_scene(state::GameState, my_id::Int)
         cam_x, cam_z, cam_yaw = p.x, p.z, p.yaw
     end
     
-    # Cámara tipo Among Us (Top-Down inclinada)
-    # Si soy espectador (Server), veo el centro
     if my_id == -1
-        gluLookAt(0, 30, 20, 0, 0, 0, 0, 1, 0)
+        # Espectador
+        manual_gluLookAt(0, 30, 20, 0, 0, 0, 0, 1, 0)
     else
-        # Cámara siguiendo al jugador
+        # Jugador
         ex = cam_x - 8 * sin(deg2rad(cam_yaw))
         ez = cam_z - 8 * cos(deg2rad(cam_yaw))
-        gluLookAt(ex, 10, ez, cam_x, 1, cam_z, 0, 1, 0)
+        manual_gluLookAt(ex, 10, ez, cam_x, 1, cam_z, 0, 1, 0)
     end
 
     # Suelo
@@ -332,6 +357,16 @@ function render_scene(state::GameState, my_id::Int)
     glVertex3f(50, 0, -50)
     glVertex3f(50, 0, 50)
     glVertex3f(-50, 0, 50)
+    glEnd()
+
+    # Deactivation Zones (Visual)
+    set_material((0.5, 0.9, 0.5))
+    glBegin(GL_QUADS)
+    glNormal3f(0,1,0)
+    glVertex3f(17, 0.05, -3)
+    glVertex3f(23, 0.05, -3)
+    glVertex3f(23, 0.05, 3)
+    glVertex3f(17, 0.05, 3)
     glEnd()
 
     # Dibujar Jugadores
@@ -355,27 +390,6 @@ function render_scene(state::GameState, my_id::Int)
             glPopMatrix()
         end
     end
-end
-
-# Helper para gluLookAt en Julia moderno si GLU falta, o usamos el wrapper
-# Asumiendo que ModernGL tiene acceso a funciones de compatibilidad o GLU está linkeado
-function gluLookAt(eyex, eyey, eyez, centerx, centery, centerz, upx, upy, upz)
-    # Implementación manual simple si GLU falla, o llamar a la lib C
-    # Por simplicidad en este ejemplo, usamos ccall a GLU si está instalado, 
-    # pero aquí va una versión manual de matriz de vista para asegurar que corra.
-    f = normalize([centerx - eyex, centery - eyey, centerz - eyez])
-    u = normalize([upx, upy, upz])
-    s = normalize(cross(f, u))
-    u = cross(s, f)
-    
-    M = Float32[
-         s[1]  u[1] -f[1]  0;
-         s[2]  u[2] -f[2]  0;
-         s[3]  u[3] -f[3]  0;
-            0     0     0  1
-    ]
-    glMultMatrixf(M)
-    glTranslatef(-Float32(eyex), -Float32(eyey), -Float32(eyez))
 end
 
 
@@ -402,19 +416,18 @@ function run_server(port::Int)
             next_id += 1
             println(">>> Cliente conectado: ID $id")
             
-            # Crear jugador
+            # Asignar color random
             color = (rand(), rand(), rand())
             state.players[id] = PlayerState(id, 0.0, 0.0, -5.0, 0.0, 0.0, 0.0, :idle, 0, color)
             clients[id] = sock
 
-            # Loop de lectura para este cliente
             @async begin
                 try
                     while isopen(sock)
-                        input = deserialize(sock) # Recibir input
+                        input = deserialize(sock) 
                         client_inputs[id] = input
                     end
-                catch e
+                catch
                     println("Cliente $id desconectado")
                     delete!(state.players, id)
                     delete!(clients, id)
@@ -424,16 +437,22 @@ function run_server(port::Int)
         end
     end
 
-    # Loop principal del servidor (Renderiza + Lógica)
+    # Inicializar GLFW
     GLFW.Init()
-    window = GLFW.CreateWindow(800, 600, "SERVER - SPECTATOR VIEW", nothing, nothing)
+    
+    # HINTS IMPORTANTES PARA MACOS
+    GLFW.WindowHint(GLFW.CONTEXT_VERSION_MAJOR, 2)
+    GLFW.WindowHint(GLFW.CONTEXT_VERSION_MINOR, 1)
+    
+    # FIX: Usar solo 3 argumentos para ventana normal
+    window = GLFW.CreateWindow(800, 600, "SERVER - SPECTATOR VIEW")
+    
     GLFW.MakeContextCurrent(window)
     glEnable(GL_DEPTH_TEST)
     
-    # Perspectiva
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
-    # Manual perspective equivalente a gluPerspective(60, aspect, 0.1, 100)
+    # Frustum simple
     fov = 60.0; aspect = 800/600; zNear = 0.1; zFar = 100.0
     fh = tan(deg2rad(fov) / 2) * zNear
     fw = fh * aspect
@@ -447,13 +466,9 @@ function run_server(port::Int)
         dt = now - last_time
         last_time = now
 
-        # Lógica del juego
         update_game_logic!(state, client_inputs, dt)
         
-        # Limpiar inputs procesados (opcional, o mantenerlos hasta el siguiente paquete)
-        # En UDP es distinto, en TCP deserializamos streams. Aquí asumimos inputs continuos.
-        
-        # Enviar estado a todos los clientes
+        # Enviar estado a clientes
         for (id, sock) in clients
             try
                 serialize(sock, state)
@@ -462,12 +477,11 @@ function run_server(port::Int)
             end
         end
 
-        # Renderizar vista espectador
-        render_scene(state, -1) # ID -1 = Espectador
+        render_scene(state, -1, window)
         
         GLFW.SwapBuffers(window)
         GLFW.PollEvents()
-        sleep(0.01) # Pequeño sleep para no quemar CPU en el loop
+        sleep(0.01)
     end
     
     GLFW.DestroyWindow(window)
@@ -480,11 +494,15 @@ function run_client(ip_str::String, port::Int)
     println(">>> ¡Conectado!")
 
     GLFW.Init()
-    window = GLFW.CreateWindow(WIN_W, WIN_H, "CLIENTE - AMONG US JULIA", nothing, nothing)
+    # HINTS IMPORTANTES PARA MACOS
+    GLFW.WindowHint(GLFW.CONTEXT_VERSION_MAJOR, 2)
+    GLFW.WindowHint(GLFW.CONTEXT_VERSION_MINOR, 1)
+
+    window = GLFW.CreateWindow(WIN_W, WIN_H, "CLIENTE - AMONG US JULIA")
+    
     GLFW.MakeContextCurrent(window)
     glEnable(GL_DEPTH_TEST)
 
-    # Configurar proyección
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
     fov = 60.0; aspect = WIN_W/WIN_H; zNear = 0.1; zFar = 100.0
@@ -493,28 +511,13 @@ function run_client(ip_str::String, port::Int)
     glFrustum(-fw, fw, -fh, fh, zNear, zFar)
     glMatrixMode(GL_MODELVIEW)
 
-    # Variable local del estado (recibida del server)
     local_state = nothing
-    my_id = 0 # Necesitamos saber quiénes somos. 
-    # TRUCO: El servidor asigna ID. Para simplificar, asumimos que la cámara sigue al jugador
-    # cuya input mandamos. Pero para renderizar la cámara correcta, el servidor debería
-    # mandar un mensaje de "Welcome" con el ID.
-    # Por simplicidad: Buscaremos en el estado un jugador que no hayamos visto antes o asumimos
-    # que el servidor nos manda nuestro ID primero.
     
-    # Vamos a inferir el ID: El servidor no manda ID explícito en este protocolo simple.
-    # Mejoramos protocolo: El primer mensaje es el ID.
-    # IMPORTANTE: Modificar server loop para mandar ID al conectar no está en el código
-    # de arriba por brevedad.
-    # WORKAROUND: El cliente renderiza todo. La cámara se quedará en 0,0 hasta saber ID.
-    # Para corregir: añadimos lógica de identificación simple.
-
-    # Hilo de recepción
     @async begin
         while isopen(sock)
             try
                 local_state = deserialize(sock)
-            catch e
+            catch
                 break
             end
         end
@@ -523,7 +526,6 @@ function run_client(ip_str::String, port::Int)
     last_time = time()
     keys_pressed = Set{Int}()
 
-    # Callbacks de teclado
     GLFW.SetKeyCallback(window, (_, key, scancode, action, mods) -> begin
         if action == GLFW.PRESS
             push!(keys_pressed, Int(key))
@@ -534,7 +536,6 @@ function run_client(ip_str::String, port::Int)
 
     while !GLFW.WindowShouldClose(window)
         if local_state === nothing
-            # Esperando datos del server
             GLFW.PollEvents()
             continue
         end
@@ -543,7 +544,6 @@ function run_client(ip_str::String, port::Int)
         dt = now - last_time
         last_time = now
 
-        # Enviar Inputs
         input = ClientInput(copy(keys_pressed), dt)
         try
             serialize(sock, input)
@@ -552,26 +552,14 @@ function run_client(ip_str::String, port::Int)
             break
         end
 
-        # Determinar mi ID (Heurística: El input que mando mueve a alguien, pero visualmente
-        # necesito saber quién soy. En una impl real, el handshake inicial da el ID.
-        # Asumiremos que el ID se pasa o renderizaremos cámara libre si falla).
-        # *Mejora rápida*: El servidor debería mandar el ID. Pero como no puedo editar el bloque
-        # @async del server fácilmente sin complicar el código, usaremos cámara fija
-        # si no sabemos ID, o asumiremos que somos el último añadido si es un test local.
-        
-        # Renderizar
-        # Nota: Como no tenemos handshake de ID en este código simplificado, 
-        # la cámara del cliente actuará como espectador o seguirá al primer jugador que encuentre
-        # para propósitos de demostración.
-        
-        # Intento de encontrar "mi" jugador:
+        # Heurística para encontrar mi ID (el primer jugador en la lista si soy el único, o iterar)
         target_id = isempty(local_state.players) ? -1 : first(keys(local_state.players))
         
         if !isempty(local_state.msg)
             GLFW.SetWindowTitle(window, local_state.msg)
         end
 
-        render_scene(local_state, target_id)
+        render_scene(local_state, target_id, window)
 
         GLFW.SwapBuffers(window)
         GLFW.PollEvents()
@@ -606,7 +594,6 @@ function main()
     end
 end
 
-# Ejecutar si es el script principal
 if abspath(PROGRAM_FILE) == @__FILE__
     main()
 end
