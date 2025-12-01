@@ -1,5 +1,5 @@
 # ==============================================================================
-# AMONG US - CLON MULTIJUGADOR EN JULIA (SYNTAX FIX)
+# AMONG US - CLON MULTIJUGADOR EN JULIA (MAC OS SAFE MODE)
 # ==============================================================================
 using Sockets
 using Serialization
@@ -9,10 +9,12 @@ using LinearAlgebra
 using Printf
 
 # ==============================================================================
-# 0. FIX CRÍTICO PARA MACOS (OpenGL Directo)
+# 0. SISTEMA DE SEGURIDAD PARA MACOS (OpenGL Directo)
 # ==============================================================================
+# Definimos la ruta al driver gráfico de Mac para forzar la carga de funciones
 const LIBGL_MAC = "/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL"
 
+# Wrapper seguro para cargar matrices
 function safe_glLoadMatrixf(matrix::Matrix{Float32})
     if Sys.isapple()
         try
@@ -22,6 +24,32 @@ function safe_glLoadMatrixf(matrix::Matrix{Float32})
         end
     else
         glLoadMatrixf(matrix)
+    end
+end
+
+# Wrapper seguro para colorear (Reemplaza a glMaterial)
+function safe_glColor3f(r::Float64, g::Float64, b::Float64)
+    if Sys.isapple()
+        try
+            ccall((:glColor3f, LIBGL_MAC), Cvoid, (Float32, Float32, Float32), r, g, b)
+        catch e
+            glColor3f(r, g, b)
+        end
+    else
+        glColor3f(r, g, b)
+    end
+end
+
+# Wrapper para Viewport (por si acaso)
+function safe_glViewport(x, y, w, h)
+    if Sys.isapple()
+        try
+            ccall((:glViewport, LIBGL_MAC), Cvoid, (Int32, Int32, Int32, Int32), x, y, w, h)
+        catch e
+            glViewport(x, y, w, h)
+        end
+    else
+        glViewport(x, y, w, h)
     end
 end
 
@@ -85,7 +113,7 @@ const TURN_SPEED = 120.0
 const PICKUP_RANGE = 2.0 
 
 # ==============================================================================
-# 2. LÓGICA
+# 2. LÓGICA DEL JUEGO
 # ==============================================================================
 
 function create_initial_state()
@@ -111,7 +139,7 @@ end
 function update_game_logic!(state::GameState, inputs::Dict{Int, ClientInput}, dt::Float64)
     if state.game_over; return; end
 
-    # Jugadores
+    # 1. Jugadores
     for (pid, input) in inputs
         if !haskey(state.players, pid); continue; end
         p = state.players[pid]
@@ -143,6 +171,7 @@ function update_game_logic!(state::GameState, inputs::Dict{Int, ClientInput}, dt
             p.leg_l *= 0.9; p.leg_r *= 0.9
         end
 
+        # Interacción (Espacio)
         if GLFW.KEY_SPACE in input.keys
             if p.carrying_bomb_id > 0
                 b_idx = findfirst(b -> b.id == p.carrying_bomb_id, state.bombs)
@@ -151,6 +180,7 @@ function update_game_logic!(state::GameState, inputs::Dict{Int, ClientInput}, dt
                     b.carrier_id = 0
                     b.x = p.x + sin(rad)*0.8; b.z = p.z + cos(rad)*0.8
                     p.carrying_bomb_id = 0
+                    # Zona de desactivación (Ejemplo: Derecha)
                     if (abs(b.x) > 17 && abs(b.z) < 3) 
                         b.deactivated = true; b.active = false
                     end
@@ -169,7 +199,7 @@ function update_game_logic!(state::GameState, inputs::Dict{Int, ClientInput}, dt
         end
     end
 
-    # NPC
+    # 2. NPC
     npc = state.npc
     target = NPC_PATH[npc.current_path_idx]
     dx = target[1] - npc.x; dz = target[2] - npc.z
@@ -183,7 +213,7 @@ function update_game_logic!(state::GameState, inputs::Dict{Int, ClientInput}, dt
         npc.leg_l = sin(t_anim) * 25; npc.leg_r = -sin(t_anim) * 25
     end
 
-    # Bombas
+    # 3. Bombas
     for b in state.bombs
         if b.active && !b.deactivated
             b.timer -= dt
@@ -199,15 +229,10 @@ function update_game_logic!(state::GameState, inputs::Dict{Int, ClientInput}, dt
 end
 
 # ==============================================================================
-# 3. OPENGL MANUAL (MATRICES)
+# 3. RENDERIZADO MANUAL (SIN LIGHTING PARA EVITAR ERRORES)
 # ==============================================================================
 
-function set_material(color)
-    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, Float32[color[1], color[2], color[3], 1.0])
-    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, Float32[0.2, 0.2, 0.2, 1.0])
-    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 32.0f0)
-end
-
+# Genera matriz Frustum
 function get_frustum_matrix(l, r, b, t, n, f)
     return Float32[
         (2*n)/(r-l)   0.0           0.0            0.0
@@ -217,6 +242,7 @@ function get_frustum_matrix(l, r, b, t, n, f)
     ]
 end
 
+# Genera matriz LookAt
 function get_lookat_matrix(eyex, eyey, eyez, centerx, centery, centerz, upx, upy, upz)
     F = Float32[centerx - eyex, centery - eyey, centerz - eyez]
     f = normalize(F)
@@ -243,12 +269,13 @@ end
 
 function draw_cube()
     glBegin(GL_QUADS)
-    glNormal3f(0,0,1); glVertex3f(-0.5,-0.5,0.5); glVertex3f(0.5,-0.5,0.5); glVertex3f(0.5,0.5,0.5); glVertex3f(-0.5,0.5,0.5)
-    glNormal3f(0,0,-1); glVertex3f(-0.5,-0.5,-0.5); glVertex3f(-0.5,0.5,-0.5); glVertex3f(0.5,0.5,-0.5); glVertex3f(0.5,-0.5,-0.5)
-    glNormal3f(-1,0,0); glVertex3f(-0.5,-0.5,-0.5); glVertex3f(-0.5,-0.5,0.5); glVertex3f(-0.5,0.5,0.5); glVertex3f(-0.5,0.5,-0.5)
-    glNormal3f(1,0,0); glVertex3f(0.5,-0.5,-0.5); glVertex3f(0.5,0.5,-0.5); glVertex3f(0.5,0.5,0.5); glVertex3f(0.5,-0.5,0.5)
-    glNormal3f(0,1,0); glVertex3f(-0.5,0.5,-0.5); glVertex3f(-0.5,0.5,0.5); glVertex3f(0.5,0.5,0.5); glVertex3f(0.5,0.5,-0.5)
-    glNormal3f(0,-1,0); glVertex3f(-0.5,-0.5,-0.5); glVertex3f(0.5,-0.5,-0.5); glVertex3f(0.5,-0.5,0.5); glVertex3f(-0.5,-0.5,0.5)
+    # Sin normales, solo geometría
+    glVertex3f(-0.5,-0.5,0.5); glVertex3f(0.5,-0.5,0.5); glVertex3f(0.5,0.5,0.5); glVertex3f(-0.5,0.5,0.5)
+    glVertex3f(-0.5,-0.5,-0.5); glVertex3f(-0.5,0.5,-0.5); glVertex3f(0.5,0.5,-0.5); glVertex3f(0.5,-0.5,-0.5)
+    glVertex3f(-0.5,-0.5,-0.5); glVertex3f(-0.5,-0.5,0.5); glVertex3f(-0.5,0.5,0.5); glVertex3f(-0.5,0.5,-0.5)
+    glVertex3f(0.5,-0.5,-0.5); glVertex3f(0.5,0.5,-0.5); glVertex3f(0.5,0.5,0.5); glVertex3f(0.5,-0.5,0.5)
+    glVertex3f(-0.5,0.5,-0.5); glVertex3f(-0.5,0.5,0.5); glVertex3f(0.5,0.5,0.5); glVertex3f(0.5,0.5,-0.5)
+    glVertex3f(-0.5,-0.5,-0.5); glVertex3f(0.5,-0.5,-0.5); glVertex3f(0.5,-0.5,0.5); glVertex3f(-0.5,-0.5,0.5)
     glEnd()
 end
 
@@ -257,18 +284,22 @@ function draw_character(x, y, z, yaw, leg_l, leg_r, color, has_cargo)
     glTranslatef(x, y, z)
     glRotatef(yaw, 0, 1, 0)
     
-    set_material(color)
+    # Torso
+    safe_glColor3f(color[1], color[2], color[3])
     glPushMatrix(); glTranslatef(0, 0.9, 0); glScalef(0.7, 1.0, 0.4); draw_cube(); glPopMatrix()
     
-    set_material((color[1]*1.2, color[2]*1.2, color[3]*1.2))
+    # Cabeza
+    safe_glColor3f(color[1]*1.2, color[2]*1.2, color[3]*1.2)
     glPushMatrix(); glTranslatef(0, 1.6, 0); glScalef(0.5, 0.5, 0.5); draw_cube(); glPopMatrix()
 
-    set_material(color)
+    # Piernas
+    safe_glColor3f(color[1], color[2], color[3])
     glPushMatrix(); glTranslatef(-0.2, 0.4, 0); glRotatef(leg_l, 1, 0, 0); glTranslatef(0, -0.4, 0); glScalef(0.25, 0.8, 0.25); draw_cube(); glPopMatrix()
     glPushMatrix(); glTranslatef(0.2, 0.4, 0); glRotatef(leg_r, 1, 0, 0); glTranslatef(0, -0.4, 0); glScalef(0.25, 0.8, 0.25); draw_cube(); glPopMatrix()
 
+    # Carga
     if has_cargo
-        set_material((1.0, 1.0, 0.0))
+        safe_glColor3f(1.0, 1.0, 0.0) # Amarillo
         glPushMatrix(); glTranslatef(0, 1.0, 0.35); glScalef(0.4, 0.4, 0.4); draw_cube(); glPopMatrix()
     end
     glPopMatrix()
@@ -276,11 +307,16 @@ end
 
 function render_scene(state::GameState, my_id::Int, window::GLFW.Window)
     fb_w, fb_h = GLFW.GetFramebufferSize(window)
-    glViewport(0, 0, fb_w, fb_h)
+    safe_glViewport(0, 0, fb_w, fb_h)
+    
+    # Color de fondo (Azul cielo claro)
+    glClearColor(0.5, 0.7, 1.0, 1.0)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()
 
+    # Cámara
     cam_x, cam_z, cam_yaw = 0.0, 0.0, 0.0
     if my_id != -1 && haskey(state.players, my_id)
         p = state.players[my_id]; cam_x = p.x; cam_z = p.z; cam_yaw = p.yaw
@@ -297,31 +333,41 @@ function render_scene(state::GameState, my_id::Int, window::GLFW.Window)
     
     safe_glLoadMatrixf(view_mat)
 
-    set_material((0.8, 0.8, 0.8))
-    glBegin(GL_QUADS); glNormal3f(0,1,0)
+    # Suelo (Gris)
+    safe_glColor3f(0.8, 0.8, 0.8)
+    glBegin(GL_QUADS)
     glVertex3f(-50, 0, -50); glVertex3f(50, 0, -50); glVertex3f(50, 0, 50); glVertex3f(-50, 0, 50)
     glEnd()
 
-    set_material((0.5, 0.9, 0.5))
-    glBegin(GL_QUADS); glNormal3f(0,1,0)
+    # Zona Verde (Desactivación)
+    safe_glColor3f(0.5, 0.9, 0.5)
+    glBegin(GL_QUADS)
     glVertex3f(17, 0.05, -3); glVertex3f(23, 0.05, -3); glVertex3f(23, 0.05, 3); glVertex3f(17, 0.05, 3)
     glEnd()
 
+    # Jugadores
     for (pid, p) in state.players; draw_character(p.x, p.y, p.z, p.yaw, p.leg_l, p.leg_r, p.color, p.carrying_bomb_id > 0); end
+    
+    # NPC
     npc = state.npc
     draw_character(npc.x, 2.5, npc.z, npc.yaw, npc.leg_l, npc.leg_r, (0.9, 0.2, 0.2), false)
 
+    # Bombas en el suelo
     for b in state.bombs
         if b.active && !b.exploded && b.carrier_id == 0
-            color = b.deactivated ? (0.2, 1.0, 0.2) : (1.0, 1.0, 0.0)
-            set_material(color)
+            # Verde si desactivada, Amarilla si activa
+            if b.deactivated
+                safe_glColor3f(0.2, 1.0, 0.2)
+            else
+                safe_glColor3f(1.0, 1.0, 0.0)
+            end
             glPushMatrix(); glTranslatef(b.x, 0.25, b.z); glScalef(0.5, 0.5, 0.5); draw_cube(); glPopMatrix()
         end
     end
 end
 
 # ==============================================================================
-# 4. SERVER / CLIENT
+# 4. EJECUCIÓN
 # ==============================================================================
 
 function run_server(port::Int)
@@ -351,10 +397,13 @@ function run_server(port::Int)
     end
 
     GLFW.Init()
+    # Pide OpenGL 2.1 explícitamente (Compatible con Mac Legacy)
     GLFW.WindowHint(GLFW.CONTEXT_VERSION_MAJOR, 2); GLFW.WindowHint(GLFW.CONTEXT_VERSION_MINOR, 1)
+    
     window = GLFW.CreateWindow(800, 600, "SERVER - SPECTATOR")
     GLFW.MakeContextCurrent(window)
     glEnable(GL_DEPTH_TEST)
+    # NOTA: NO habilitamos GL_LIGHTING para evitar crasheos en Mac
 
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
@@ -383,6 +432,7 @@ function run_client(ip_str::String, port::Int)
     println(">>> ¡Conectado!")
     GLFW.Init()
     GLFW.WindowHint(GLFW.CONTEXT_VERSION_MAJOR, 2); GLFW.WindowHint(GLFW.CONTEXT_VERSION_MINOR, 1)
+    
     window = GLFW.CreateWindow(WIN_W, WIN_H, "CLIENTE")
     GLFW.MakeContextCurrent(window)
     glEnable(GL_DEPTH_TEST)
