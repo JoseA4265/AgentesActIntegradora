@@ -717,7 +717,7 @@ def main():
         draw_humanoid(
             agent,
             torso_color=(60, 140, 230),
-            head_color=(110, 180, 255),
+            head_color=(110, 180, 255), 
             show_cargo=True,
             carrying=(agent.carrying_index is not None)
         )
