@@ -108,6 +108,13 @@ class AgentState:
         self.leg_r = 0.0
         self._t = 0.0
 
+        self.anim_state = 'none' 
+        self.anim_t = 0.0        
+        self.anim_duration = 0.4 
+        self.anim_obj_index = None 
+        self.anim_start_pos = (0,0,0) 
+        self.anim_end_pos = (0,0,0)
+
 class NPCState:
     def __init__(self):
         self.x, self.y, self.z = 0.0, 0.0, 2.5
@@ -161,6 +168,19 @@ def make_checkerboard_tex(size=256, checks=16):
     gluBuild2DMipmaps(GL_TEXTURE_2D, GL_RGB, size, size, GL_RGB, GL_UNSIGNED_BYTE, img)
     glBindTexture(GL_TEXTURE_2D, 0)
     return tex_id
+
+def get_agent_back_world_pos(agent):
+
+    rad = math.radians(agent.yaw)
+    s, c = math.sin(rad), math.cos(rad)
+    
+    back_dist = 0.28
+    bx = agent.x - s * back_dist
+    bz = agent.z - c * back_dist
+    by = agent.y + 1.1
+    return (bx, by, bz)
+
+
 
 def set_material(diffuse, ambient=None, specular=(50,50,50), shininess=48):
     if ambient is None:
@@ -293,18 +313,26 @@ def draw_humanoid(entity, torso_color, head_color, show_cargo=False, carrying=Fa
     glDisable(GL_CULL_FACE)
     glPushMatrix()
     glTranslatef(entity.x, entity.y, entity.z)
-    glRotatef(entity.yaw, 0,1,0)
+    glRotatef(entity.yaw, 0, 1, 0)
+
+    if hasattr(entity, 'anim_state') and entity.anim_state in ('pickup', 'drop'):
+
+        anim_curve = math.sin(entity.anim_t * math.pi) 
+        crouch_depth = 0.35 * anim_curve 
+        glTranslatef(0, -crouch_depth, 0)
+        lean_angle = 30.0 * anim_curve
+        glRotatef(lean_angle, 1, 0, 0)
 
     torso_h = 1.0
     torso_center_y = 0.9
-    torso_bottom_y = torso_center_y - torso_h * 0.5  # 0.4
+    torso_bottom_y = torso_center_y - torso_h * 0.5  
     torso_depth = 0.4
 
     set_material(torso_color)
     glPushMatrix()
     glTranslatef(0, torso_center_y, 0)
     glScalef(0.7, torso_h, torso_depth)
-    draw_cube(1,1,1)
+    draw_cube(1, 1, 1)
     glPopMatrix()
 
     set_material(head_color)
@@ -320,36 +348,33 @@ def draw_humanoid(entity, torso_color, head_color, show_cargo=False, carrying=Fa
 
     glPushMatrix()
     glTranslatef(-0.18, torso_bottom_y, 0)
-    glRotatef(entity.leg_l, 1,0,0)
-    
+    glRotatef(entity.leg_l, 1, 0, 0)
     glPushMatrix()
     glTranslatef(0, -leg_h/2, 0)
     glScalef(0.22, leg_h, leg_depth)
-    draw_cube(1,1,1)
+    draw_cube(1, 1, 1)
     glPopMatrix()
-    
+
     glPushMatrix()
     glTranslatef(0, -leg_h/2, leg_half_depth + 0.01)
     glScalef(0.22, leg_h, 0.015)
-    draw_cube(1,1,1)
+    draw_cube(1, 1, 1)
     glPopMatrix()
     glPopMatrix()
-
 
     glPushMatrix()
     glTranslatef(+0.18, torso_bottom_y, 0)
-    glRotatef(entity.leg_r, 1,0,0)
-    
+    glRotatef(entity.leg_r, 1, 0, 0)
     glPushMatrix()
     glTranslatef(0, -leg_h/2, 0)
     glScalef(0.22, leg_h, leg_depth)
-    draw_cube(1,1,1)
+    draw_cube(1, 1, 1)
     glPopMatrix()
-    
+
     glPushMatrix()
     glTranslatef(0, -leg_h/2, leg_half_depth + 0.01)
     glScalef(0.22, leg_h, 0.015)
-    draw_cube(1,1,1)
+    draw_cube(1, 1, 1)
     glPopMatrix()
     glPopMatrix()
 
@@ -357,12 +382,17 @@ def draw_humanoid(entity, torso_color, head_color, show_cargo=False, carrying=Fa
     glPushMatrix()
     glTranslatef(0, torso_center_y, (torso_depth/2) + 0.005)
     glScalef(0.7, torso_h, 0.03)
-    draw_cube(1,1,1)
+    draw_cube(1, 1, 1)
     glPopMatrix()
 
-    if show_cargo and carrying:
+    is_animating = hasattr(entity, 'anim_state') and entity.anim_state != 'none'
+    
+    if show_cargo and carrying and not is_animating:
         back_pos = (0.0, 1.1, 0.28)
-        glPushMatrix(); glTranslatef(*back_pos); draw_cargo_cube(bombs[entity.carrying_index]); glPopMatrix()
+        glPushMatrix()
+        glTranslatef(*back_pos)
+        draw_cargo_cube(bombs[entity.carrying_index])
+        glPopMatrix()
 
     glPopMatrix()
     glEnable(GL_CULL_FACE)
@@ -431,34 +461,50 @@ def key_callback(window, key, scancode, action, mods):
             glfw.set_window_should_close(window, True)
 
         elif key == glfw.KEY_SPACE:
+            # Don't allow new action if currently animating
+            if agent.anim_state != 'none':
+                return
+
+            # --- DROP LOGIC ---
             if agent.carrying_index is not None:
                 idx = agent.carrying_index
                 b = bombs[idx]
+                
+                # 1. Calculate drop destination
                 fx = math.sin(math.radians(agent.yaw))
                 fz = math.cos(math.radians(agent.yaw))
-                b.world_pos = (agent.x + fx * 0.6, 0.18, agent.z + fz * 0.6)
-                b.carried = False
+                drop_target = (agent.x + fx * 0.6, 0.18, agent.z + fz * 0.6)
+                
+                # 2. Setup Animation
+                agent.anim_state = 'drop'
+                agent.anim_t = 0.0
+                agent.anim_obj_index = idx
+                agent.anim_start_pos = get_agent_back_world_pos(agent)
+                agent.anim_end_pos = drop_target
+                
                 agent.carrying_index = None
+                b.carried = False 
 
-                cx, _, cz = b.world_pos
-                if cargo_in_deactivation_area(cx, cz):
-                    b.deactivated = True
-                    b.active = False
-                    print(f"Bomb {idx} deactivated safely!")
             else:
                 best_idx = None
                 best_dist = 1e9
                 for i, b in enumerate(bombs):
-                    if b.deactivated or b.exploded:
+                    if b.deactivated or b.exploded or b.carried:
                         continue
                     bx, by, bz = b.world_pos
                     dist = math.hypot(agent.x - bx, agent.z - bz)
                     if dist <= PICKUP_RANGE and dist < best_dist:
                         best_dist = dist
                         best_idx = i
+                
                 if best_idx is not None:
-                    agent.carrying_index = best_idx
-                    bombs[best_idx].carried = True
+                    agent.anim_state = 'pickup'
+                    agent.anim_t = 0.0
+                    agent.anim_obj_index = best_idx
+                    agent.anim_start_pos = bombs[best_idx].world_pos
+                    
+                    bombs[best_idx].carried = True 
+                
 
     elif action == glfw.RELEASE:
         if key in keys_down:
@@ -665,6 +711,52 @@ def main():
 
         if not GAME_OVER:
             process_input(dt)
+
+            if agent.anim_state != 'none':
+                agent.anim_t += dt / agent.anim_duration
+                
+                # Calculate current animation position (Linear Interpolation)
+                t = min(1.0, agent.anim_t)
+                
+                # Add a small arc (Lift) using Sine
+                lift_height = 0.5 * math.sin(t * math.pi) 
+                
+                start = agent.anim_start_pos
+                
+                if agent.anim_state == 'pickup':
+                    end = get_agent_back_world_pos(agent) # Track moving agent
+                else:
+                    end = agent.anim_end_pos # Fixed ground spot
+                
+                # Lerp coordinates
+                cur_x = start[0] + (end[0] - start[0]) * t
+                cur_y = start[1] + (end[1] - start[1]) * t + lift_height
+                cur_z = start[2] + (end[2] - start[2]) * t
+                
+                # Update Bomb Position visually
+                b_idx = agent.anim_obj_index
+                if b_idx is not None:
+                    bombs[b_idx].world_pos = (cur_x, cur_y, cur_z)
+
+                # --- ANIMATION FINISHED ---
+                if agent.anim_t >= 1.0:
+                    if agent.anim_state == 'pickup':
+                        agent.carrying_index = agent.anim_obj_index
+                        # Final snap to back is handled by draw_humanoid now
+                    
+                    elif agent.anim_state == 'drop':
+                        # Check Deactivation Logic here (at end of drop)
+                        b = bombs[agent.anim_obj_index]
+                        b.world_pos = agent.anim_end_pos # Ensure exact landing
+                        cx, _, cz = b.world_pos
+                        if cargo_in_deactivation_area(cx, cz):
+                            b.deactivated = True
+                            b.active = False
+                            print(f"Bomb {agent.anim_obj_index} deactivated safely!")
+
+                    agent.anim_state = 'none'
+                    agent.anim_obj_index = None
+
             animate_legs(agent, dt)
 
             update_npc(npc, dt)
